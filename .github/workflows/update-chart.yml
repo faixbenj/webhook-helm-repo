@@ -1,0 +1,250 @@
+name: 📦 Update Helm Chart
+
+on:
+  repository_dispatch:
+    types: [update-chart]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to update (e.g., v1.0.0)'
+        required: true
+        type: string
+      image:
+        description: 'Docker image with tag'
+        required: true
+        type: string
+
+jobs:
+  # 🔄 Update Chart Version and Create PR
+  update-chart:
+    name: 🔄 Update Chart Version
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout helm repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: 🏷️ Extract version info
+        id: version-info
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            VERSION="${{ github.event.client_payload.version }}"
+            IMAGE="${{ github.event.client_payload.image }}"
+            SOURCE_REPO="${{ github.event.client_payload.source_repo }}"
+            RELEASE_URL="${{ github.event.client_payload.release_url }}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+            IMAGE="${{ github.event.inputs.image }}"
+            SOURCE_REPO="Manual trigger"
+            RELEASE_URL=""
+          fi
+          
+          # Remove 'v' prefix for chart version if present
+          CHART_VERSION=${VERSION#v}
+          
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "chart-version=${CHART_VERSION}" >> $GITHUB_OUTPUT
+          echo "image=${IMAGE}" >> $GITHUB_OUTPUT
+          echo "source-repo=${SOURCE_REPO}" >> $GITHUB_OUTPUT
+          echo "release-url=${RELEASE_URL}" >> $GITHUB_OUTPUT
+          
+          echo "📦 Processing version: ${VERSION}"
+          echo "🎯 Chart version: ${CHART_VERSION}"
+          echo "🐳 Image: ${IMAGE}"
+
+      - name: 📝 Update Chart.yaml
+        run: |
+          CHART_VERSION="${{ steps.version-info.outputs.chart-version }}"
+          APP_VERSION="${{ steps.version-info.outputs.version }}"
+          
+          # Update Chart.yaml
+          sed -i "s/^version:.*/version: ${CHART_VERSION}/" charts/webhook-monitor/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${APP_VERSION}\"/" charts/webhook-monitor/Chart.yaml
+          
+          echo "✅ Updated Chart.yaml with version ${CHART_VERSION} and appVersion ${APP_VERSION}"
+
+      - name: 📝 Update values.yaml with new image
+        run: |
+          IMAGE="${{ steps.version-info.outputs.image }}"
+          
+          # Extract repository and tag from image
+          REPO=$(echo "${IMAGE}" | cut -d':' -f1)
+          TAG=$(echo "${IMAGE}" | cut -d':' -f2)
+          
+          # Update values.yaml
+          sed -i "s|repository:.*|repository: ${REPO}|" charts/webhook-monitor/values.yaml
+          sed -i "s|tag:.*|tag: \"${TAG}\"|" charts/webhook-monitor/values.yaml
+          
+          echo "✅ Updated values.yaml with image ${IMAGE}"
+
+      - name: 🔧 Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.14.0'
+
+      - name: 🧪 Lint Helm chart
+        run: |
+          helm lint charts/webhook-monitor/
+          echo "✅ Helm chart linting passed"
+
+      - name: 🧪 Template Helm chart
+        run: |
+          helm template webhook-monitor charts/webhook-monitor/ > /tmp/rendered-template.yaml
+          echo "✅ Helm chart template rendering successful"
+
+      - name: 📋 Generate PR description
+        id: pr-description
+        run: |
+          VERSION="${{ steps.version-info.outputs.version }}"
+          IMAGE="${{ steps.version-info.outputs.image }}"
+          SOURCE_REPO="${{ steps.version-info.outputs.source-repo }}"
+          RELEASE_URL="${{ steps.version-info.outputs.release-url }}"
+          
+          cat > pr-description.md << EOF
+          ## 🚀 Update Helm Chart to ${VERSION}
+          
+          This PR automatically updates the Helm chart following a new release in the main application repository.
+          
+          ### 📦 Changes
+          - **Chart Version**: Updated to \`${{ steps.version-info.outputs.chart-version }}\`
+          - **App Version**: Updated to \`${VERSION}\`
+          - **Docker Image**: Updated to \`${IMAGE}\`
+          
+          ### 🔗 Source
+          - **Repository**: ${SOURCE_REPO}
+          - **Release**: ${RELEASE_URL}
+          
+          ### ✅ Validation
+          - [x] Helm chart linting passed
+          - [x] Template rendering successful
+          - [x] Version numbers updated correctly
+          
+          ### 🎯 Next Steps
+          After merging this PR:
+          1. The chart will be packaged and published
+          2. GitHub Pages will be updated with the new chart version
+          3. Users can install with: \`helm install webhook-monitor oci://ghcr.io/${{ github.repository_owner }}/charts/webhook-monitor --version ${{ steps.version-info.outputs.chart-version }}\`
+          
+          ---
+          *This PR was automatically created by the CI/CD pipeline* 🤖
+          EOF
+
+      - name: 🔀 Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "🚀 Update chart to version ${{ steps.version-info.outputs.version }}"
+          title: "🚀 Update Helm chart to ${{ steps.version-info.outputs.version }}"
+          body-path: pr-description.md
+          branch: "update/chart-${{ steps.version-info.outputs.chart-version }}"
+          delete-branch: true
+          draft: false
+          labels: |
+            automated
+            version-update
+            ${{ steps.version-info.outputs.version }}
+
+  # 📦 Package and Publish Chart (runs on main branch push)
+  package-and-publish:
+    name: 📦 Package & Publish Chart
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🔧 Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.14.0'
+
+      - name: 📦 Package Helm chart
+        run: |
+          mkdir -p .cr-release-packages
+          helm package charts/webhook-monitor/ --destination .cr-release-packages/
+          echo "✅ Chart packaged successfully"
+
+      - name: 🔐 Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📤 Push chart to OCI registry
+        run: |
+          for chart in .cr-release-packages/*.tgz; do
+            if [ -f "$chart" ]; then
+              helm push "$chart" oci://ghcr.io/${{ github.repository_owner }}/charts
+              echo "✅ Pushed $chart to OCI registry"
+            fi
+          done
+
+      - name: 🔧 Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: 📋 Run chart-releaser
+        uses: helm/chart-releaser-action@v1.6.0
+        with:
+          charts_dir: charts
+          config: .cr.yaml
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: 🌐 Update GitHub Pages index
+        run: |
+          git checkout gh-pages || git checkout --orphan gh-pages
+          
+          # Create or update index.yaml for Helm repository
+          helm repo index . --url https://${{ github.repository_owner }}.github.io/webhook-monitor-helm/
+          
+          # Create a simple index.html for the repository
+          cat > index.html << EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <title>Webhook Monitor Helm Repository</title>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <style>
+                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+                  .header { text-align: center; margin-bottom: 50px; }
+                  .code { background: #f6f8fa; padding: 10px; border-radius: 6px; font-family: monospace; }
+                  .emoji { font-size: 1.2em; }
+              </style>
+          </head>
+          <body>
+              <div class="header">
+                  <h1><span class="emoji">⎈</span> Webhook Monitor Helm Repository</h1>
+                  <p>Official Helm charts for the Webhook Monitor application</p>
+              </div>
+              
+              <h2><span class="emoji">📦</span> Add Repository</h2>
+              <div class="code">helm repo add webhook-monitor https://${{ github.repository_owner }}.github.io/webhook-monitor-helm/</div>
+              
+              <h2><span class="emoji">🚀</span> Install Chart</h2>
+              <div class="code">helm install my-webhook-monitor webhook-monitor/webhook-monitor</div>
+              
+              <h2><span class="emoji">🔗</span> Links</h2>
+              <ul>
+                  <li><a href="https://github.com/${{ github.repository_owner }}/webhook-monitor">Source Code</a></li>
+                  <li><a href="https://github.com/${{ github.repository_owner }}/webhook-monitor-helm">Helm Charts</a></li>
+                  <li><a href="./index.yaml">Repository Index</a></li>
+              </ul>
+          </body>
+          </html>
+          EOF
+          
+          git add .
+          git commit -m "📦 Update Helm repository index" || echo "No changes to commit"
+          git push origin gh-pages
+          
+          echo "✅ GitHub Pages updated with new chart index"

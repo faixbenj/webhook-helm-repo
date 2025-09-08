@@ -1,0 +1,25 @@
+# Binaries
+*.exe
+*.dll
+*.pdb
+
+# Helm packages
+*.tgz
+
+# Chart dependencies
+charts/*/charts/
+charts/*/tmpcharts/
+
+# Release packages
+.cr-release-packages/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
