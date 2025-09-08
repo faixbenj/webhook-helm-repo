@@ -1,13 +1,16 @@
 # ⎈ Webhook Monitor Helm Charts
 
-Official Helm charts for the [Webhook Monitor](https://github.com/faixbenj/webhook-monitor) application.
+Official Helm charts for the [Webhook Monitor](https://github.com/faixbenj/webhook-monitor) appli- 🏠 [Main Application](https://github.com/faixbenj/webhook-monitor)
+- 📜 [Chart Documentation](./charts/webhook-monitor/README.md)
+- 🌐 [Helm Repository](https://faixbenj.github.io/webhook-helm-repo/)
+- 🐳 [Container Images](https://github.com/faixbenj/webhook-monitor/pkgs/container/webhook-monitor)on.
 
 ## 🚀 Quick Start
 
 ### Add the Helm Repository
 
 ```bash
-helm repo add webhook-monitor https://faixbenj.github.io/webhook-monitor-helm/
+helm repo add webhook-monitor https://faixbenj.github.io/webhook-helm-repo/
 helm repo update
 ```
 
@@ -93,8 +96,8 @@ autoscaling:
 
 ```bash
 # Clone the repository
-git clone https://github.com/faixbenj/webhook-monitor-helm.git
-cd webhook-monitor-helm
+git clone https://github.com/faixbenj/webhook-helm-repo.git
+cd webhook-helm-repo
 
 # Validate the chart
 helm lint charts/webhook-monitor/

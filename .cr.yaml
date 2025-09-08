@@ -1,5 +1,5 @@
 # Chart Releaser configuration
 owner: faixbenj
-git-repo: webhook-monitor-helm
-charts-repo-url: https://faixbenj.github.io/webhook-monitor-helm
+git-repo: webhook-helm-repo
+charts-repo-url: https://faixbenj.github.io/webhook-helm-repo
 skip-existing: true
