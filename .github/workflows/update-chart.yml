@@ -14,6 +14,13 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read
+  packages: write
+  pages: write
+
 jobs:
   # 🔄 Update Chart Version and Create PR
   update-chart:
@@ -142,6 +149,8 @@ jobs:
           branch: "update/chart-${{ steps.version-info.outputs.chart-version }}"
           delete-branch: true
           draft: false
+          committer: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
+          author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
           labels: |
             automated
             version-update
@@ -188,8 +197,8 @@ jobs:
 
       - name: 🔧 Configure Git
         run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: 📋 Run chart-releaser
         uses: helm/chart-releaser-action@v1.6.0
